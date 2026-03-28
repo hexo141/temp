@@ -1,53 +1,143 @@
-build-windows:
-  runs-on: windows-latest
-  
-  steps:
-  - name: 检出代码
-    uses: actions/checkout@v4
+name: Build Executables
 
-  - name: 设置 Python 环境
-    uses: actions/setup-python@v5
-    with:
-      python-version: '3.10'
-      cache: 'pip'
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
 
-  - name: 安装依赖
-    run: |
-      python -m pip install --upgrade pip
-      pip install ultralytics PySide6 opencv-python nuitka ordered-set zstandard
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  - name: 检查模型文件
-    run: |
-      if (-not (Test-Path "yolo26n-face.pt")) {
-        Write-Error "模型文件 yolo26n-face.pt 不存在，请确保已上传到仓库"
-        exit 1
-      }
-    shell: pwsh
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-  - name: 自动确认 Dependency Walker 下载并编译
-    run: |
-      # 使用 echo y 自动确认下载依赖分析工具
-      echo y | nuitka --standalone `
-        --enable-console `
-        --follow-imports `
-        --include-data-file=yolo26n-face.pt=yolo26n-face.pt `
-        --include-data-file=icon.ico=icon.ico `
-        --windows-icon-from-ico=icon.ico `
-        --enable-plugin=pyside6 `
-        --enable-plugin=opencv `
-        --enable-plugin=multiprocessing `
-        --output-dir=dist `
-        main.py
-    shell: pwsh
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install nuitka
+          pip install PySide6 ultralytics opencv-python numpy pillow
 
-  - name: 打包发布文件
-    run: |
-      Compress-Archive -Path dist/main.dist/* -DestinationPath FaceRollCall_Windows.zip
-    shell: pwsh
+      - name: List files before build
+        run: |
+          echo "Files in repository:"
+          dir
+          echo "Checking if model file exists:"
+          if (Test-Path "yolo26n-face.pt") { echo "Model file found" } else { echo "Model file NOT found" }
 
-  - name: 上传构建产物
-    uses: actions/upload-artifact@v4
-    with:
-      name: FaceRollCall-Windows
-      path: FaceRollCall_Windows.zip
-      retention-days: 30
+      - name: Build with Nuitka (Windows)
+        run: |
+          nuitka --standalone `
+                  --enable-plugin=pyside6 `
+                  --enable-plugin=opencv `
+                  --enable-plugin=multiprocessing `
+                  --enable-console `
+                  --windows-uac-admin `
+                  --include-data-file=yolo26n-face.pt=yolo26n-face.pt `
+                  --include-data-file=icon.ico=icon.ico `
+                  --windows-icon-from-ico=icon.ico `
+                  --include-package=cv2 `
+                  --include-package=numpy `
+                  --include-package=ultralytics `
+                  --include-module=PIL `
+                  --output-dir=dist `
+                  --output-filename=FaceRollCall.exe `
+                  --follow-imports `
+                  --lto=yes `
+                  --jobs=4 `
+                  --assume-yes-for-downloads `
+                  main.py
+
+      - name: List files after build
+        run: |
+          echo "Checking build output:"
+          if (Test-Path "dist/main.dist") { 
+            echo "Build successful! Files in dist/main.dist:"
+            dir dist/main.dist
+          } else {
+            echo "Build failed - dist/main.dist not found"
+            echo "Checking dist directory:"
+            if (Test-Path "dist") { dir dist } else { echo "dist directory not found" }
+          }
+
+      - name: Upload Windows artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FaceRollCall-Windows
+          path: dist/main.dist/
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install nuitka
+          pip install PySide6 ultralytics opencv-python numpy pillow
+
+      - name: List files before build
+        run: |
+          echo "Files in repository:"
+          ls -la
+          echo "Checking if model file exists:"
+          if [ -f "yolo26n-face.pt" ]; then echo "Model file found"; else echo "Model file NOT found"; fi
+
+      - name: Build with Nuitka (Linux)
+        run: |
+          nuitka --standalone ^
+                  --enable-plugin=pyside6 ^
+                  --enable-plugin=opencv ^
+                  --enable-plugin=multiprocessing ^
+                  --enable-console ^
+                  --windows-uac-admin ^
+                  --include-data-file=yolo26n-face.pt=yolo26n-face.pt ^
+                  --include-data-file=icon.ico=icon.ico ^
+                  --windows-icon-from-ico=icon.ico ^
+                  --include-package=cv2 ^
+                  --include-package=numpy ^
+                  --include-package=ultralytics ^
+                  --include-module=PIL ^
+                  --output-dir=dist ^
+                  --output-filename=FaceRollCall.exe ^
+                  --follow-imports ^
+                  --lto=yes ^
+                  --jobs=4 ^
+                  --assume-yes-for-downloads ^
+                  main.py
+
+      - name: List files after build
+        run: |
+          echo "Checking build output:"
+          if [ -d "dist/main.dist" ]; then 
+            echo "Build successful! Files in dist/main.dist:"
+            ls -la dist/main.dist
+          else
+            echo "Build failed - dist/main.dist not found"
+            echo "Checking dist directory:"
+            if [ -d "dist" ]; then ls -la dist; else echo "dist directory not found"; fi
+          fi
+
+      - name: Upload Linux artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FaceRollCall-Linux
+          path: dist/main.dist/
+          if-no-files-found: error
