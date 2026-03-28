@@ -1,133 +1,137 @@
-name: Build Executables
+# .github/workflows/build.yml
+name: Build Executable
 
 on:
   push:
-    branches: [ main, master ]
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - master
   pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches:
+      - main
+      - master
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: 检出代码
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install nuitka
-          pip install PySide6 ultralytics opencv-python numpy pillow
+    - name: 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install ultralytics PySide6 opencv-python nuitka ordered-set zstandard
 
-      - name: List files before build
-        run: |
-          echo "Files in repository:"
-          dir
-          echo "Checking if model file exists:"
-          if (Test-Path "yolo26n-face.pt") { echo "Model file found" } else { echo "Model file NOT found" }
+    - name: 下载模型文件
+      run: |
+        if (-not (Test-Path "yolo26n-face.pt")) {
+          Write-Host "模型文件不存在，请确保已上传到仓库"
+          exit 1
+        }
+      shell: pwsh
 
-      - name: Build with Nuitka (Windows)
-        run: |
-          nuitka --standalone `
-                 --enable-plugin=pyside6 `
-                 --windows-disable-console `
-                 --windows-uac-admin `
-                 --include-data-files=yolo26n-face.pt=./ `
-                 --include-package=cv2 `
-                 --include-package=numpy `
-                 --include-package=ultralytics `
-                 --include-module=PIL `
-                 --assume-yes-for-downloads `
-                 --output-dir=dist `
-                 --output-filename=FaceRollCall.exe `
-                 --follow-imports `
-                 --lto=yes `
-                 --jobs=4 `
-                 main.py
+    - name: Nuitka 编译
+      run: |
+        nuitka --standalone `
+          --enable-console `
+          --follow-imports `
+          --include-data-file=yolo26n-face.pt=yolo26n-face.pt `
+          --include-data-file=icon.ico=icon.ico `
+          --windows-icon-from-ico=icon.ico `
+          --enable-plugin=pyside6 `
+          --enable-plugin=opencv `
+          --enable-plugin=multiprocessing `
+          --output-dir=dist `
+          main.py
+      shell: pwsh
 
-      - name: List files after build
-        run: |
-          echo "Checking build output:"
-          if (Test-Path "dist/main.dist") { 
-            echo "Build successful! Files in dist/main.dist:"
-            dir dist/main.dist
-          } else {
-            echo "Build failed - dist/main.dist not found"
-            echo "Checking dist directory:"
-            if (Test-Path "dist") { dir dist } else { echo "dist directory not found" }
-          }
+    - name: 打包发布文件
+      run: |
+        Compress-Archive -Path dist/main.dist/* -DestinationPath FaceRollCall_Windows.zip
+      shell: pwsh
 
-      - name: Upload Windows artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: FaceRollCall-Windows
-          path: dist/main.dist/
-          if-no-files-found: error
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: FaceRollCall-Windows
+        path: FaceRollCall_Windows.zip
+        retention-days: 30
+
+    - name: 创建 Release (仅标签触发)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: FaceRollCall_Windows.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-linux:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: 检出代码
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install nuitka
-          pip install PySide6 ultralytics opencv-python numpy pillow
+    - name: 安装系统依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y patchelf libgtk-3-dev
 
-      - name: List files before build
-        run: |
-          echo "Files in repository:"
-          ls -la
-          echo "Checking if model file exists:"
-          if [ -f "yolo26n-face.pt" ]; then echo "Model file found"; else echo "Model file NOT found"; fi
+    - name: 安装 Python 依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install ultralytics PySide6 opencv-python nuitka ordered-set zstandard
 
-      - name: Build with Nuitka (Linux)
-        run: |
-          nuitka --standalone \
-                 --enable-plugin=pyside6 \
-                 --include-data-files=yolo26n-face.pt=./ \
-                 --include-package=cv2 \
-                 --include-package=numpy \
-                 --include-package=ultralytics \
-                 --include-module=PIL \
-                 --assume-yes-for-downloads \
-                 --output-dir=dist \
-                 --output-filename=FaceRollCall \
-                 --follow-imports \
-                 --lto=yes \
-                 --jobs=4 \
-                 main.py
+    - name: 检查模型文件
+      run: |
+        if [ ! -f "yolo26n-face.pt" ]; then
+          echo "模型文件不存在，请确保已上传到仓库"
+          exit 1
+        fi
 
-      - name: List files after build
-        run: |
-          echo "Checking build output:"
-          if [ -d "dist/main.dist" ]; then 
-            echo "Build successful! Files in dist/main.dist:"
-            ls -la dist/main.dist
-          else
-            echo "Build failed - dist/main.dist not found"
-            echo "Checking dist directory:"
-            if [ -d "dist" ]; then ls -la dist; else echo "dist directory not found"; fi
-          fi
+    - name: Nuitka 编译
+      run: |
+        nuitka --standalone \
+          --enable-console \
+          --follow-imports \
+          --include-data-file=yolo26n-face.pt=yolo26n-face.pt \
+          --enable-plugin=pyside6 \
+          --enable-plugin=opencv \
+          --enable-plugin=multiprocessing \
+          --output-dir=dist \
+          main.py
 
-      - name: Upload Linux artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: FaceRollCall-Linux
-          path: dist/main.dist/
-          if-no-files-found: error
+    - name: 打包发布文件
+      run: |
+        zip -r FaceRollCall_Linux.zip dist/main.dist/
+
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: FaceRollCall-Linux
+        path: FaceRollCall_Linux.zip
+        retention-days: 30
+
+    - name: 创建 Release (仅标签触发)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: FaceRollCall_Linux.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
