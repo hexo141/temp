@@ -13,10 +13,10 @@ class CustomProgressDialog(QDialog):
         self.setWindowTitle(title)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        self.resize(400, 90)  # 减小高度从100到90
+        self.resize(400, 85)
         
         layout = QVBoxLayout(self)
-        layout.setSpacing(5)  # 设置控件之间的间距为5像素
+        layout.setSpacing(4)  # 设置控件之间的间距为5像素
         layout.setContentsMargins(10, 10, 10, 10)  # 设置外边距（左，上，右，下）
         
         # 文本标签
