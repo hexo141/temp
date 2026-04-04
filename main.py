@@ -68,23 +68,18 @@ class CustomProgressDialog(QDialog):
 
 def dynamic_imports(progress_callback):
     """动态导入所需库，并更新进度"""
-    # 步骤1: 导入 OpenCV (10% -> 20%)
+    # 步骤1: 导入 OpenCV (10% -> 30%)
     progress_callback(10, "正在导入 OpenCV...")
     import cv2
-    progress_callback(20, "OpenCV 导入完成")
-    
-    # 步骤2: 导入 ultralytics (20% -> 40%)
-    progress_callback(30, "正在导入 ultralytics...")
-    from ultralytics import YOLO
-    progress_callback(40, "ultralytics 导入完成")
-    
-    # 步骤3: 其他标准库导入 (40% -> 50%)
-    progress_callback(45, "正在准备其他模块...")
+    progress_callback(30, "OpenCV 导入完成")
+
+    # 步骤2: 其他标准库导入 (30% -> 50%)
+    progress_callback(40, "正在准备其他模块...")
     import os
     from multiprocessing import Process, Queue, Event, Manager
     progress_callback(50, "基础模块准备完成")
-    
-    return cv2, YOLO, os, Process, Queue, Event, Manager
+
+    return cv2, os, Process, Queue, Event, Manager
 
 def main():
     multiprocessing.freeze_support()
@@ -102,7 +97,7 @@ def main():
     
     try:
         # ---------- 动态导入所有库 ----------
-        cv2, YOLO, os, Process, Queue, Event, Manager = dynamic_imports(update_progress)
+        cv2, os, Process, Queue, Event, Manager = dynamic_imports(update_progress)
         
         # ---------- 检查模型文件 ----------
         update_progress(55, "检查模型文件...")

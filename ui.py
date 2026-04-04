@@ -1,8 +1,8 @@
 import sys
 import cv2
 import time
-from PySide6.QtWidgets import (QMainWindow, QLabel, QPushButton, 
-                               QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, 
+from PySide6.QtWidgets import (QMainWindow, QLabel, QPushButton,
+                               QVBoxLayout, QWidget, QHBoxLayout, QSpinBox,
                                QComboBox, QMessageBox, QDialog, QScrollArea, QStatusBar)
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QTimer, Qt, Slot
@@ -52,7 +52,7 @@ class FaceRollCallApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("学生人脸点名器 FaceRollCall")
         self.showMaximized()
-
+        
         # 接收外部传入的资源
         self.frame_queue = frame_queue
         self.raw_queue = raw_queue
@@ -61,6 +61,10 @@ class FaceRollCallApp(QMainWindow):
         self.worker_process = worker_process
         self.is_running = True
         self.selected_cam_index = selected_cam_index
+        
+        # 初始化共享字典中的摄像头索引，确保子进程知道初始状态
+        if 'cam_index' not in self.shared_dict:
+            self.shared_dict['cam_index'] = selected_cam_index
 
         # FPS 统计相关
         self.frame_count = 0
@@ -100,33 +104,55 @@ class FaceRollCallApp(QMainWindow):
         self.cam_combo.setEditable(False)
         for idx in available_cams:
             self.cam_combo.addItem(f"Camera {idx}", idx)
+        
+        # 设置初始选择
         if self.selected_cam_index in available_cams:
             self.cam_combo.setCurrentIndex(available_cams.index(self.selected_cam_index))
-        self.cam_combo.setEnabled(False)
-        control_layout.addWidget(QLabel("摄像头:"))
+        
+        # 【关键修改】启用摄像头切换，并连接信号
+        self.cam_combo.setEnabled(True) 
+        self.cam_combo.currentIndexChanged.connect(self.on_camera_changed)
+        
+        control_layout.addWidget(QLabel("摄像头: "))
         control_layout.addWidget(self.cam_combo)
 
         # 选取人数
         self.count_spin = QSpinBox()
         self.count_spin.setRange(1, 50)
         self.count_spin.setValue(5)
-        control_layout.addWidget(QLabel("选取人数:"))
+        control_layout.addWidget(QLabel("选取人数: "))
         control_layout.addWidget(self.count_spin)
 
         # 点名按钮
         self.roll_call_btn = QPushButton("开始点名")
         self.roll_call_btn.clicked.connect(self.start_roll_call)
         self.roll_call_btn.setEnabled(True)
-        self.roll_call_btn.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; padding: 5px;")
+        self.roll_call_btn.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; padding: 5px; ")
         control_layout.addWidget(self.roll_call_btn)
 
         main_layout.addLayout(control_layout)
 
         # ---------- 底部状态栏（显示 FPS、可抽取人数、CPU 占用） ----------
-        status_bar = QStatusBar()
+        status_bar = QStatusBar() 
         self.setStatusBar(status_bar)
         self.status_label = QLabel("初始化...")
         status_bar.addWidget(self.status_label)
+
+    @Slot(int)
+    def on_camera_changed(self, index):
+        """当用户在下拉框中选择不同摄像头时触发"""
+        if index < 0:
+            return
+        # 获取对应的摄像头 ID (userData)
+        cam_id = self.cam_combo.itemData(index)
+        print(f"UI: 请求切换到摄像头 {cam_id}")
+        
+        # 更新共享字典，子进程会轮询这个值并执行切换
+        self.shared_dict['cam_index'] = cam_id
+        
+        # 可选：清空当前画面，避免旧画面残留误导用户
+        self.video_label.clear()
+        self.video_label.setText("切换摄像头中...")
 
     def update_status(self):
         """每秒更新状态栏信息：FPS、可抽取人数、CPU占用"""
