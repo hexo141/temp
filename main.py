@@ -100,11 +100,11 @@ def main():
         cv2, os, Process, Queue, Event, Manager = dynamic_imports(update_progress)
         
         # ---------- 检查模型文件 ----------
-        update_progress(55, "检查模型文件...")
-        MODEL_PATH = "yolo26n-face.pt"
+        update_progress(55, "检查模型文件夹...")
+        MODEL_PATH = "./yolo26n-face_openvino_model"
         if not os.path.exists(MODEL_PATH):
             progress.close()
-            QMessageBox.critical(None, "错误", f"模型文件 {MODEL_PATH} 不存在，请放入程序目录。")
+            QMessageBox.critical(None, "错误", f"模型文件夹 {MODEL_PATH} 不存在，请放入程序目录。")
             sys.exit(1)
         
         # ---------- 扫描摄像头 ----------
