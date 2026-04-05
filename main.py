@@ -6,6 +6,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 
 # 延迟导入，以便先显示进度条
+# 注意：我们需要先导入 wmi，如果没安装会自动处理
+try:
+    import wmi
+    WMI_AVAILABLE = True
+except ImportError:
+    WMI_AVAILABLE = False
 
 class CustomProgressDialog(QDialog):
     def __init__(self, title="初始化中", label_text="正在启动程序，请稍候...", parent=None):
@@ -74,34 +80,96 @@ def dynamic_imports(progress_callback):
     return cv2, os, Process, Queue, Event, Manager
 
 def get_camera_names(cv2, max_id=10):
-    """在 Windows 上尝试获取摄像头名称，返回 , ...]"""
+    """
+    强制获取摄像头名称的函数
+    优先使用 WMI 获取 Windows 设备名称，如果失败则回退到 OpenCV 尝试
+    """
     cameras = []
+    
+    # 方法 1: 使用 WMI (仅 Windows) - 最可靠
+    if WMI_AVAILABLE:
+        try:
+            c = wmi.WMI()
+            # 查询所有图像设备
+            for device in c.Win32_PnPEntity():
+                if device.ConfigManagerErrorCode == 0:  # 设备正常
+                    # 粗略判断是否为摄像头
+                    if device.Name and ("Camera" in device.Name or 
+                                      "Camera" in device.Description or 
+                                      "Image" in device.Description or
+                                      "USB Video" in device.Description):
+                        # 这里我们获取到了名称，但需要映射到 OpenCV 的索引
+                        # 我们先记录名称，稍后通过探测匹配索引
+                        pass
+            
+            # 由于 WMI 无法直接给出 OpenCV 索引，我们做一个映射表
+            # 我们假设按顺序打开的设备对应 WMI 列表中的顺序（通常成立）
+            wmi_names = []
+            for device in c.Win32_PnPEntity():
+                if (device.Name and ("Camera" in device.Name or 
+                                   "Camera" in device.Description or 
+                                   "Image" in device.Description)) and device.ConfigManagerErrorCode == 0:
+                    wmi_names.append(device.Name)
+            
+            # 现在探测 OpenCV 索引
+            for i in range(max_id):
+                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+                if cap.isOpened():
+                    ret, _ = cap.read()
+                    if ret:
+                        # 尝试从 WMI 名单里取名字
+                        if i < len(wmi_names):
+                            name = wmi_names[i]
+                        else:
+                            # 如果 WMI 名单不够，尝试用 OpenCV 属性
+                            try:
+                                prop_id = getattr(cv2, 'CAP_PROP_DEVICE_FRIENDLY_NAME', None)
+                                if prop_id is not None:
+                                    friendly_name = cap.get(prop_id)
+                                    if isinstance(friendly_name, str) and friendly_name.strip():
+                                        name = friendly_name
+                                    else:
+                                        name = f"摄像头 {i} - {device.Name if 'device' in locals() else 'Unknown'}"
+                                else:
+                                    name = f"摄像头 {i} (WMI回退)"
+                            except:
+                                name = f"摄像头 {i} (WMI回退)"
+                        cameras.append((i, name))
+                    cap.release()
+                    # 如果连续几个打不开，就break（防止遍历太久）
+                    if len(cameras) > 0 and not ret:
+                        break
+            if cameras:
+                return cameras
+        except Exception as e:
+            print(f"WMI 获取失败: {e}")
+
+    # 方法 2: 传统回退 (如果 WMI 失败)
+    # 强制使用 DirectShow 并尝试获取属性
     for i in range(max_id):
-        # 使用 CAP_DSHOW（Windows）以支持获取设备名
         cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
         if cap.isOpened():
             ret, _ = cap.read()
             if ret:
-                # 尝试获取摄像头名称
+                name = f"摄像头 {i}"
                 try:
-                    # CAP_PROP_DEVICE_FRIENDLY_NAME 是 OpenCV 4.7+ 的属性
-                    name = cap.getBackendName()
-                    # 更可靠的方式：直接用 OpenCV 属性（部分版本支持）
-                    prop_id = getattr(cv2, 'CAP_PROP_DEVICE_FRIENDLY_NAME', None)
-                    if prop_id is not None:
-                        friendly_name = cap.get(prop_id)
-                        if isinstance(friendly_name, str) and friendly_name.strip():
-                            name = friendly_name
-                        elif isinstance(friendly_name, float) and friendly_name != 0.0:
-                            name = str(int(friendly_name))
+                    # 尝试获取友好名称
+                    prop_id = getattr(cv2, 'CAP_PROP_DEVICE_FRIENDLY_NAME', 0)
+                    friendly_name = cap.get(prop_id)
+                    if friendly_name != 0.0: # OpenCV 有时返回 float
+                        if isinstance(friendly_name, float):
+                            name = f"摄像头 {i} (ID: {int(friendly_name)})"
                         else:
-                            name = f"Camera {i}"
-                    else:
-                        name = f"Camera {i}"
-                except Exception:
-                    name = f"Camera {i}"
+                            name = str(friendly_name)
+                except:
+                    pass
                 cameras.append((i, name))
             cap.release()
+    
+    # 最终兜底
+    if not cameras:
+        cameras = ")]
+    
     return cameras
 
 def main():
@@ -127,13 +195,21 @@ def main():
             sys.exit(1)
         
         update_progress(60, "正在扫描摄像头...")
-        available_cams = get_camera_names(cv2, max_id=10)
+        available_cams = get_camera_names(cv2, max_id=5) # 减少扫描数量提高速度
+        
+        # 调试输出：打印获取到的摄像头信息
+        print("=== 扫描到的摄像头列表 ===")
+        for idx, name in available_cams:
+            print(f"索引: {idx}, 名称: {name}")
+        print("=========================")
+        
         if not available_cams:
             progress.close()
             QMessageBox.critical(None, "错误", "未检测到可用摄像头，程序将退出。")
             sys.exit(1)
-        selected_cam = available_cams[0][0]  # 取第一个摄像头的索引
-        update_progress(70, f"已选择摄像头: {available_cams[0][1]}")
+            
+        selected_cam = available_cams[0][0]
+        update_progress(70, f"已选择: {available_cams[0][1]}")
         
         update_progress(75, "准备多进程通信...")
         frame_queue = Queue(maxsize=1)
@@ -182,7 +258,7 @@ def main():
             stop_event=stop_event,
             worker_process=worker,
             selected_cam_index=selected_cam,
-            available_cams=available_cams  # ← 现在是 , ...]
+            available_cams=available_cams # 传入 (index, name) 列表
         )
         
         update_progress(100, "启动完成")
