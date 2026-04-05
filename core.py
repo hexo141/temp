@@ -61,7 +61,7 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
     try:
         core = ov.Core()
         ov_model = core.read_model(os.path.join(ov_model_dir, f"{os.path.splitext(os.path.basename(model_path))[0]}.xml"))
-        device = "GPU" if "GPU" in ov.Core().available_devices else "CPU"
+        device = "GPU" if "GPU" in core.available_devices else "CPU"
         compiled_model = core.compile_model(ov_model, device)
         input_layer = compiled_model.input(0)
         output_layer = compiled_model.output(0)
