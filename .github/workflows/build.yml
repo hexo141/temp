@@ -22,14 +22,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install nuitka PySide6 opencv-python numpy pillow openvino
+          pip install nuitka PySide6 opencv-python numpy pillow openvino psutil
 
       - name: Build with Nuitka (Windows)
         run: |
-          nuitka --standalone --enable-plugin=pyside6 --enable-plugin=multiprocessing --enable-plugin=numpy --enable-plugin=anti-bloat --enable-console --windows-uac-admin --windows-icon-from-ico=icon.ico --output-dir=dist --output-filename=FaceRollCall.exe --follow-imports --lto=yes --jobs=4 --python-flag=no_site --assume-yes-for-downloads main.py --include-data-file=icon.ico=icon.ico --include-data-file=arrow_right.png=arrow_right.png --include-data-dir=yolo26n-face_openvino_model=yolo26n-face_openvino_model
+          nuitka --standalone --enable-plugin=pyside6 --enable-plugin=multiprocessing --enable-plugin=numpy --enable-plugin=anti-bloat --enable-console --windows-uac-admin --windows-icon-from-ico=icon.ico --output-dir=dist --output-filename=FaceRollCall.exe --follow-imports --lto=yes --jobs=4 --python-flag=no_site --assume-yes-for-downloads main.py --include-data-file=icon.ico=icon.ico --include-package=psutil --include-data-file=arrow_right.png=arrow_right.png --include-data-dir=yolo26n-face_openvino_model=yolo26n-face_openvino_model
 
       - name: Compress build output
         run: |
+          copy yolo26n-face_openvino_model/yolo26n-face.bin dist/main.dist/yolo26n-face_openvino_model/yolo26n-face.bin
           Compress-Archive -Path dist/main.dist/* -DestinationPath dist/FaceRollCall-Windows.zip
 
       - name: Upload artifact (for debugging)
