@@ -233,13 +233,12 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
         cap = cv2.VideoCapture(current_cam_idx)
         if not cap.isOpened():
             print(f"无法打开摄像头 {current_cam_idx}，重试中...")
-            manager_dict['latest_detections'] = [] # 清空检测结果
-            time.sleep(1)
+            manager_dict['latest_detections'] = []
             continue
         
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        cap.set(cv2.CAP_PROP_FPS, 60)
         print(f"摄像头 {current_cam_idx} 已打开")
 
         # 3. 启动线程
@@ -254,7 +253,6 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
             new_target = manager_dict.get('cam_index', current_cam_idx)
             if new_target != current_cam_idx:
                 break
-            time.sleep(0.1)
 
         # 5. 清理当前摄像头资源，准备下一轮循环
         capture_stop.set()
