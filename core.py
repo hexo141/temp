@@ -18,11 +18,9 @@ except ImportError:
 # ============================================================================== 
 # 配置部分
 # ==============================================================================
-MODEL_PATH = "yolo26n-face.pt"           # 原始 PyTorch 模型路径（仅用于推断模型文件夹名）
-DEFAULT_IMG_SZ = 320                     # 推理图像尺寸
+DEFAULT_IMG_SZ = 640                     # 推理图像尺寸
 CONF_THRESHOLD = 0.30                    # 置信度阈值
 MAX_DETECTIONS = 100                     # 最大检测数量
-DEVICE = "cpu"                           # 设备（openvino 后端自动使用 CPU）
 
 # ============================================================================== 
 # 辅助函数：仅检查 OpenVINO IR 模型是否存在，返回模型文件夹路径
@@ -62,6 +60,7 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
         core = ov.Core()
         ov_model = core.read_model(os.path.join(ov_model_dir, f"{os.path.splitext(os.path.basename(model_path))[0]}.xml"))
         device = "GPU" if "GPU" in core.available_devices else "CPU"
+        print("Use device " + device)
         compiled_model = core.compile_model(ov_model, device)
         input_layer = compiled_model.input(0)
         output_layer = compiled_model.output(0)
@@ -87,8 +86,8 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
     def postprocess_output(output, frame_shape, conf_threshold=CONF_THRESHOLD):
         output = np.squeeze(output)
         h, w = frame_shape[:2]
-        scale_x = w / 320.0
-        scale_y = h / 320.0
+        scale_x = w / DEFAULT_IMG_SZ
+        scale_y = h / DEFAULT_IMG_SZ
         detections = []
         
         if len(output.shape) == 1:
@@ -223,9 +222,6 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
             # 停止当前线程
             capture_stop.set()
             inference_stop.set()
-            # 等待线程结束
-            # 注意：这里不需要 join 太久，因为下一次循环会重新创建线程对象
-            time.sleep(0.2) 
             # 重置事件
             capture_stop.clear()
             inference_stop.clear()
