@@ -1,3 +1,4 @@
+
 import sys
 import cv2
 import os
@@ -18,7 +19,7 @@ except ImportError:
 # ============================================================================== 
 # 配置部分
 # ==============================================================================
-DEFAULT_IMG_SZ = 640                     # 推理图像尺寸
+DEFAULT_IMG_SZ = 320                     # 推理图像尺寸
 CONF_THRESHOLD = 0.30                    # 置信度阈值
 MAX_DETECTIONS = 100                     # 最大检测数量
 
@@ -34,14 +35,11 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
     """
     
     # ---------- 加载模型（一次性加载，全程复用） ----------
-
-
-
     try:
         core = ov.Core()
         ov_model = core.read_model(os.path.join(model_path, "yolo26n-face.xml"))
         device = "GPU" if "GPU" in core.available_devices else "CPU"
-        print("Use device " + device)
+        print(f"OpenVINO 可用设备: {core.available_devices}, 选择使用: {device}")
         compiled_model = core.compile_model(ov_model, device)
         input_layer = compiled_model.input(0)
         output_layer = compiled_model.output(0)
@@ -146,7 +144,7 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
     # ---------- 内部线程控制 ----------
     capture_stop = threading.Event()
     inference_stop = threading.Event()
-    inference_queue = queue.Queue(maxsize=1)
+    inference_queue = queue.Queue(maxsize=3)
     
     # 捕获线程
     def capture_loop(cap):
@@ -214,12 +212,13 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
         cap = cv2.VideoCapture(current_cam_idx)
         if not cap.isOpened():
             print(f"无法打开摄像头 {current_cam_idx}，重试中...")
-            manager_dict['latest_detections'] = []
+            manager_dict['latest_detections'] = [] # 清空检测结果
+            time.sleep(1)
             continue
         
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-        cap.set(cv2.CAP_PROP_FPS, 60)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        cap.set(cv2.CAP_PROP_FPS, 30)
         print(f"摄像头 {current_cam_idx} 已打开")
 
         # 3. 启动线程
@@ -234,6 +233,7 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
             new_target = manager_dict.get('cam_index', current_cam_idx)
             if new_target != current_cam_idx:
                 break
+            time.sleep(0.1)
 
         # 5. 清理当前摄像头资源，准备下一轮循环
         capture_stop.set()
