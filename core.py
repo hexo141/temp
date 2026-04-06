@@ -1,4 +1,3 @@
-
 import sys
 import cv2
 import os
@@ -19,27 +18,10 @@ except ImportError:
 # ============================================================================== 
 # 配置部分
 # ==============================================================================
-MODEL_PATH = "yolo26n-face.pt"           # 原始 PyTorch 模型路径（仅用于推断模型文件夹名）
-DEFAULT_IMG_SZ = 320                     # 推理图像尺寸
-CONF_THRESHOLD = 0.45                    # 置信度阈值
+DEFAULT_IMG_SZ = 640                     # 推理图像尺寸
+CONF_THRESHOLD = 0.30                    # 置信度阈值
 MAX_DETECTIONS = 100                     # 最大检测数量
-DEVICE = "cpu"                           # 设备（openvino 后端自动使用 CPU）
 
-# ============================================================================== 
-# 辅助函数：仅检查 OpenVINO IR 模型是否存在，返回模型文件夹路径
-# ==============================================================================
-def ensure_openvino_model(original_pt_path):
-    """
-    检查 OpenVINO IR 模型文件夹是否存在。
-    返回模型文件夹路径（如 'yolo26n-face_openvino_model'），失败则返回 None。
-    """
-    base_name = os.path.splitext(os.path.basename(original_pt_path))[0]
-    ov_dir = f"{base_name}_openvino_model"
-    ov_xml = os.path.join(ov_dir, f"{base_name}.xml")
-    if os.path.exists(ov_xml):
-        return ov_dir
-    print(f"错误：未找到 OpenVINO IR 模型文件 {ov_xml}，请先手动导出模型！")
-    return None
 
 # ==============================================================================
 # 子进程工作函数 v3 (支持热切换摄像头版)
@@ -53,16 +35,14 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
     
     # ---------- 加载模型（一次性加载，全程复用） ----------
 
-    ov_model_dir = ensure_openvino_model(model_path)
-    if not (ov_model_dir and os.path.exists(ov_model_dir) and OV_AVAILABLE):
-        print("未找到 OpenVINO 模型或 OpenVINO 不可用")
-        init_queue.put(False)
-        return
+
 
     try:
         core = ov.Core()
-        ov_model = core.read_model(os.path.join(ov_model_dir, f"{os.path.splitext(os.path.basename(model_path))[0]}.xml"))
-        compiled_model = core.compile_model(ov_model, "CPU")
+        ov_model = core.read_model(os.path.join(model_path, "yolo26n-face.xml"))
+        device = "GPU" if "GPU" in core.available_devices else "CPU"
+        print("Use device " + device)
+        compiled_model = core.compile_model(ov_model, device)
         input_layer = compiled_model.input(0)
         output_layer = compiled_model.output(0)
         print("使用 OpenVINO 直接推理")
@@ -87,8 +67,8 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
     def postprocess_output(output, frame_shape, conf_threshold=CONF_THRESHOLD):
         output = np.squeeze(output)
         h, w = frame_shape[:2]
-        scale_x = w / 320.0
-        scale_y = h / 320.0
+        scale_x = w / DEFAULT_IMG_SZ
+        scale_y = h / DEFAULT_IMG_SZ
         detections = []
         
         if len(output.shape) == 1:
@@ -126,7 +106,7 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
         return detections
 
     # ---------- OpenVINO 异步推理队列 ----------
-    infer_queue = ov.AsyncInferQueue(compiled_model, 1)
+    infer_queue = ov.AsyncInferQueue(compiled_model, 4)
 
     def inference_callback(infer_request, user_data):
         frame = user_data
@@ -223,9 +203,6 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
             # 停止当前线程
             capture_stop.set()
             inference_stop.set()
-            # 等待线程结束
-            # 注意：这里不需要 join 太久，因为下一次循环会重新创建线程对象
-            time.sleep(0.2) 
             # 重置事件
             capture_stop.clear()
             inference_stop.clear()
@@ -237,13 +214,12 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
         cap = cv2.VideoCapture(current_cam_idx)
         if not cap.isOpened():
             print(f"无法打开摄像头 {current_cam_idx}，重试中...")
-            manager_dict['latest_detections'] = [] # 清空检测结果
-            time.sleep(1)
+            manager_dict['latest_detections'] = []
             continue
         
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        cap.set(cv2.CAP_PROP_FPS, 60)
         print(f"摄像头 {current_cam_idx} 已打开")
 
         # 3. 启动线程
@@ -258,7 +234,6 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
             new_target = manager_dict.get('cam_index', current_cam_idx)
             if new_target != current_cam_idx:
                 break
-            time.sleep(0.1)
 
         # 5. 清理当前摄像头资源，准备下一轮循环
         capture_stop.set()
