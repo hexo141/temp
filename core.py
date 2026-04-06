@@ -39,7 +39,7 @@ def worker_process_v2(camera_index, model_path, frame_queue, raw_queue,
 
     try:
         core = ov.Core()
-        ov_model = core.read_model(os.path.join(MODEL_PATH, "yolo26n-face.xml"))
+        ov_model = core.read_model(os.path.join(model_path, "yolo26n-face.xml"))
         device = "GPU" if "GPU" in core.available_devices else "CPU"
         print("Use device " + device)
         compiled_model = core.compile_model(ov_model, device)
